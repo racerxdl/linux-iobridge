@@ -7,11 +7,6 @@
 #include <fcntl.h>
 #include <stdint.h>
 
-#define IOC_MAGIC 'k'
-
-#define IOCTL_GET_I2C_MSG _IO(IOC_MAGIC, 0x01)
-#define IOCTL_COMMIT_MSG  _IO(IOC_MAGIC, 0x02)
-
 #define IOCTL_RET_SUCCESS  0
 #define IOCTL_RET_NO_SRV   1
 #define IOCTL_RET_NO_MSG   2
@@ -22,6 +17,9 @@ struct loopback_msg {
   __u16 flags;  /* see above for flag definitions */
   __u16 len;    /* msg length */
 };
+
+#define IOCTL_GET_I2C_MSG  0x1000
+#define IOCTL_COMMIT_MSG   0x2000
 
 #define BUFFER_SIZE 256
 
@@ -34,6 +32,10 @@ int main() {
   struct loopback_msg myMsg;
   int fd;
   char *buff;
+
+  printf("IOCTL_GET_I2C_MSG: %08x\n", IOCTL_GET_I2C_MSG);
+  printf("IOCTL_COMMIT_MSG: %08x\n", IOCTL_COMMIT_MSG);
+  printf("Sizeof: %04d\n", sizeof(struct loopback_msg));
 
   if ((fd = open("/dev/i2c-0-master", O_RDWR))<0) {
     printf("No such device /dev/i2c-0-master\n");

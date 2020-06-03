@@ -15,21 +15,20 @@
 #define MAJOR_NUMBER 500
 #define LOOP_I2C_XFER_TIMEOUT (msecs_to_jiffies(5000))
 
-#define IOC_MAGIC 'k'
+struct loopback_msg {
+  __u16 addr;   /* slave address */
+  __u16 flags;  /* see above for flag definitions */
+  __u16 len;    /* msg length */
+};
 
-#define IOCTL_GET_I2C_MSG _IO(IOC_MAGIC, 0x01)
-#define IOCTL_COMMIT_MSG  _IO(IOC_MAGIC, 0x02)
+#define IOCTL_GET_I2C_MSG  0x1000 // _IOR(IOC_MAGIC, 0x01, sizeof(struct loopback_msg))
+#define IOCTL_COMMIT_MSG   0x2000 // _IO(IOC_MAGIC, 0x02)
 
 #define IOCTL_RET_SUCCESS  0
 #define IOCTL_RET_NO_SRV   1
 #define IOCTL_RET_NO_MSG   2
 #define IOCTL_RET_FAIL     3
 
-struct loopback_msg {
-  __u16 addr;   /* slave address */
-  __u16 flags;  /* see above for flag definitions */
-  __u16 len;    /* msg length */
-};
 
 
 //struct i2c_msg {

@@ -53,3 +53,5 @@ dkms.conf
 .cache.mk
 
 testmaster/test
+.idea
+esp32-bridge/cmd/test

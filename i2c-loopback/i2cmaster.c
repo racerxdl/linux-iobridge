@@ -37,7 +37,6 @@ static long device_ioctl(struct file *file,
   struct loopback_msg msgbuff;
   long ret = -1;
   int res;
-  int needsComplete = 0;
 
   mutex_lock(&msg_mutex);
   if (i2cslave == NULL) {
@@ -70,22 +69,21 @@ static long device_ioctl(struct file *file,
       case IOCTL_COMMIT_MSG:
         // printk(KERN_DEBUG "Received COMMIT\n");
         if (i2cslave->msg == NULL) {
-          // printk(KERN_DEBUG "Received commit but no message pending\n");
+          printk(KERN_ERR "Received commit but no message pending\n");
           ret = IOCTL_RET_NO_MSG;
           break;
         }
-        complete(&i2cslave->msg_complete);
-        needsComplete = 1;
+
+        i2cslave->msg = NULL;
+        msg_ptr = NULL;
+        msg_len = 0;
         i2cslave->msg_err = 0;
+        complete(&i2cslave->msg_complete);
         ret = IOCTL_RET_SUCCESS;
         break;
     }
   }
   mutex_unlock(&msg_mutex);
-
-  if (needsComplete) {
-    needsComplete = 0;
-  }
 
   return ret;
 }
@@ -95,12 +93,9 @@ static ssize_t device_read(struct file *flip, char *buffer, size_t len, loff_t *
   int bytes_read = 0;
 
   mutex_lock(&msg_mutex);
-  if (i2cslave != NULL && i2cslave->msg != NULL) {
-    if (msg_ptr == NULL) {
-      // First read
-      msg_ptr = i2cslave->msg->buf;
-      msg_len = i2cslave->msg->len;
-    }
+  if (i2cslave != NULL && i2cslave->msg != NULL && i2cslave->msg->buf != NULL && i2cslave->msg->len > 0) {
+    msg_ptr = i2cslave->msg->buf;
+    msg_len = i2cslave->msg->len;
 
     if (len > msg_len) {
       len = msg_len;
@@ -114,10 +109,8 @@ static ssize_t device_read(struct file *flip, char *buffer, size_t len, loff_t *
      bytes_read++;
     }
 
-    if (msg_ptr >= i2cslave->msg->buf + msg_len) {
-      msg_ptr = NULL;
-      msg_len = 0;
-    }
+    msg_ptr = NULL;
+    msg_len = 0;
   }
   mutex_unlock(&msg_mutex);
 
@@ -129,12 +122,9 @@ static ssize_t device_write(struct file *flip, const char *buffer, size_t len, l
   int bytes_wrote = 0;
 
   mutex_lock(&msg_mutex);
-  if (i2cslave != NULL && i2cslave->msg != NULL) {
-    if (msg_ptr == NULL) {
-      // First write
-      msg_ptr = i2cslave->msg->buf;
-      msg_len = i2cslave->msg->len;
-    }
+  if (i2cslave != NULL && i2cslave->msg != NULL && i2cslave->msg->buf != NULL && i2cslave->msg->len > 0) {
+    msg_ptr = i2cslave->msg->buf;
+    msg_len = i2cslave->msg->len;
 
     if (len > msg_len) {
       len = msg_len;
@@ -148,10 +138,8 @@ static ssize_t device_write(struct file *flip, const char *buffer, size_t len, l
      bytes_wrote++;
     }
 
-    if (msg_ptr >= i2cslave->msg->buf + msg_len) {
-      msg_ptr = NULL;
-      msg_len = 0;
-    }
+    msg_ptr = NULL;
+    msg_len = 0;
   }
   mutex_unlock(&msg_mutex);
 
@@ -164,8 +152,10 @@ static int device_open(struct inode *inode, struct file *file) {
   if (device_open_count) {
     return -EBUSY;
   }
-  // printk(KERN_DEBUG "Device Open\n");
+  mutex_lock(&msg_mutex);
+  printk(KERN_DEBUG "Device Open\n");
   device_open_count++;
+  mutex_unlock(&msg_mutex);
   try_module_get(THIS_MODULE);
   return 0;
 }
@@ -173,8 +163,10 @@ static int device_open(struct inode *inode, struct file *file) {
 /* Called when a process closes our device */
 static int device_release(struct inode *inode, struct file *file) {
   /* Decrement the open counter and usage count. Without this, the module would not unload. */
+  mutex_lock(&msg_mutex);
   device_open_count--;
-  // printk(KERN_DEBUG "Device Close\n");
+  printk(KERN_DEBUG "Device Close\n");
+  mutex_unlock(&msg_mutex);
   module_put(THIS_MODULE);
   return 0;
 }
@@ -215,17 +207,18 @@ int process_message(struct i2c_msg *msg) {
   i2cslave->msg_err = 0;
   mutex_unlock(&msg_mutex);
 
+  // printk(KERN_DEBUG "Waiting transaction to complete\n");
   time_left = wait_for_completion_timeout(&i2cslave->msg_complete,
             LOOP_I2C_XFER_TIMEOUT);
-
-  mutex_lock(&msg_mutex);
-  i2cslave->msg = NULL;
-  msg_ptr = NULL;
-  msg_len = 0;
-  mutex_unlock(&msg_mutex);
+  // printk(KERN_DEBUG "Transaction returned.\n");
 
   if (time_left == 0) {
     printk(KERN_DEBUG "Transaction timed out.\n");
+    mutex_lock(&msg_mutex);
+    i2cslave->msg = NULL;
+    msg_ptr = NULL;
+    msg_len = 0;
+    mutex_unlock(&msg_mutex);
     return -ETIMEDOUT;
   }
 
